@@ -50,19 +50,19 @@ Scroll through the results of the lspci tool to find the physical GPU controller
 ## Splitting the card into Virtual GPU's
 At this point, Proxmox sees the Arc Pro GPU and the XE driver should be loaded for the GPU, but it isn't available to the guest VM's.  Here is the process to split them out.
 
-##### 1. Find the PCI ID associated with your GPU.  It should be the first ID shown in the response, which in my case is `0a:00.0`.
+### 1. Find the PCI ID associated with your GPU.  It should be the first ID shown in the response, which in my case is `0a:00.0`.
 ``` bash
 lspci -nnk | grep "Battlemage"
 0a:00.0 VGA compatible controller [0300]: Intel Corporation Battlemage G21 [Intel Graphics] [8086:e212]
 ```
 
-##### 2. Use that ID to find the full PCI device path of the sriov_numfs.
+### 2. Use that ID to find the full PCI device path of the sriov_numfs.
 ```bash
 find /sys/devices -path "*0a:00.0*sriov_numvfs"
 /sys/devices/pci0000:00/0000:00:1b.4/0000:08:00.0/0000:09:01.0/0000:0a:00.0/sriov_numvfs
 ```
 
-##### 3. To set the number of virtual GPU's, set the count of virtual GPU's in sriov_numvfs.  In this case I'm allocating 6 GPU's
+### 3. To set the number of virtual GPU's, set the count of virtual GPU's in sriov_numvfs.  In this case I'm allocating 6 GPU's
 
 ``` bash
 echo 6 > /sys/devices/pci0000:00/0000:00:1b.4/0000:08:00.0/0000:09:01.0/0000:0a:00.0/sriov_numvfs
@@ -74,7 +74,7 @@ echo 0 > /sys/devices/pci0000:00/0000:00:1b.4/0000:08:00.0/0000:09:01.0/0000:0a:
 echo 8 > /sys/devices/pci0000:00/0000:00:1b.4/0000:08:00.0/0000:09:01.0/0000:0a:00.0/sriov_numvfs
 ```
 
-##### 4. Using the same command as in step 1, confirm the virtual GPU's are now showing.
+### 4. Using the same command as in step 1, confirm the virtual GPU's are now showing.
 ```bash
 lspci -nnk | grep "Battlemage"
 0a:00.0 VGA compatible controller [0300]: Intel Corporation Battlemage G21 [Intel Graphics] [8086:e212]
@@ -93,7 +93,7 @@ You can also use pvesh to confirm Proxmox sees them
 pvesh get /nodes/pve1/hardware/pci
 ```
 
-##### 5.  Make the count of virtual GPU's persistent through reboots. 
+### 5.  Make the count of virtual GPU's persistent through reboots. 
 Using the echo commands above work fine for testing, but they will not stay through a reboot.  Some have reported getting udev rules to work, but after several attempts, I was unsuccessful.  Instead, I chose to use sysfsutils as mentioned in some of the posts.
 
 Install sysfsutils: 
@@ -116,7 +116,7 @@ devices/pci0000:00/0000:00:1b.4/0000:08:00.0/0000:09:01.0/0000:0a:00.0/sriov_num
 ```
 
 ## Connecting and Activating the Virtual GPU on a Guest 
-##### 1. Create the Proxmox PCI mapping
+### 1. Create the Proxmox PCI mapping
 In the Proxmox gui, under Resource Mappings, create add a PCI Device mapping for each virtual GPU.  In my case, I just added a number at the end to identify them.
 <img width="953" height="635" alt="Pasted image 20251103102753" src="https://github.com/user-attachments/assets/dbefc086-8818-4666-a27e-37b349e2ce2e" />
 
@@ -129,12 +129,12 @@ Confirm the virtual GPU's in Proxmox are running the vfio-pci driver.  Use the l
 
 
 
-##### 7. Add the the PCI Device to the virtual machine
+### 7. Add the the PCI Device to the virtual machine
 Do not select `Primary GPU` at this time.  Once that is selected, the built in NoVNC Proxmox console stop working, so you need to have your GPU setup, and be using RDP or some other remote desktop tool.  Note - In my situation, using a Windows 11 Pro VM, it automatically uses the GPU without the need to select it as the primary.
 <img width="872" height="776" alt="Pasted image 20251103104659" src="https://github.com/user-attachments/assets/970ba4df-25e0-4f7a-a920-0477b52e70c6" />
 
 
-##### 8. Using the Virtual GPU on a Windows VM
+### 8. Using the Virtual GPU on a Windows VM
 At this point in time, the virtual GPU's are running on the Proxmox host with the vfio-pci drivers.  In order for the guest vm to use this device, it requires virtIO drivers on the guest VM as well.
 * Install [Windows VirtIO Drivers - Proxmox VE](https://pve.proxmox.com/wiki/Windows_VirtIO_Drivers)
 
