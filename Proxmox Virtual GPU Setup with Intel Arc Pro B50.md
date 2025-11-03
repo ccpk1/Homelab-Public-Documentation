@@ -41,7 +41,8 @@ This process is designed for a Proxmox 9.0.11 host running the **6.17+ Linux ker
 
 Scroll through the results of the lspci tool to find the physical GPU controller.  Note the key items to review underlined in red.
 `lspci -vvv`
-![[Pasted image 20251103123316.png]]
+<img width="1275" height="1888" alt="Pasted image 20251103123316" src="https://github.com/user-attachments/assets/6c662a7a-396e-47ea-9491-e12fcf6ccbb1" />
+
 
 
 
@@ -117,18 +118,21 @@ devices/pci0000:00/0000:00:1b.4/0000:08:00.0/0000:09:01.0/0000:0a:00.0/sriov_num
 ## Connecting and Activating the Virtual GPU on a Guest 
 ##### 1. Create the Proxmox PCI mapping
 In the Proxmox gui, under Resource Mappings, create add a PCI Device mapping for each virtual GPU.  In my case, I just added a number at the end to identify them.
-![[Pasted image 20251103102753.png]]
+<img width="953" height="635" alt="Pasted image 20251103102753" src="https://github.com/user-attachments/assets/dbefc086-8818-4666-a27e-37b349e2ce2e" />
+
 Note - There may be a way to do a single mapping that shows all available as mediated devices, but I was not able to make that work.
 
 Confirm the virtual GPU's in Proxmox are running the vfio-pci driver.  Use the lspci command, then scroll through to find the correct "child" device.  In this example, it is the .1 device, and you can see the `Kernel driver in use: vfio-pci` which means that it is ready to be passed off to the VM.  To avoid confusion, please note the kernel modules will show xe, but the important thing is that it has loaded the vfio-pci driver which what we require.
 
 `lspci -vvv`
-![[Pasted image 20251103114919.png]]
+<img width="835" height="779" alt="Pasted image 20251103114919" src="https://github.com/user-attachments/assets/c27b59cf-d828-4a8d-82e1-ce6105e45bb4" />
+
 
 
 ##### 7. Add the the PCI Device to the virtual machine
 Do not select `Primary GPU` at this time.  Once that is selected, the built in NoVNC Proxmox console stop working, so you need to have your GPU setup, and be using RDP or some other remote desktop tool.  Note - In my situation, using a Windows 11 Pro VM, it automatically uses the GPU without the need to select it as the primary.
-![[Pasted image 20251103104659.png]]
+<img width="872" height="776" alt="Pasted image 20251103104659" src="https://github.com/user-attachments/assets/970ba4df-25e0-4f7a-a920-0477b52e70c6" />
+
 
 ##### 8. Using the Virtual GPU on a Windows VM
 At this point in time, the virtual GPU's are running on the Proxmox host with the vfio-pci drivers.  In order for the guest vm to use this device, it requires virtIO drivers on the guest VM as well.
@@ -136,10 +140,12 @@ At this point in time, the virtual GPU's are running on the Proxmox host with th
 
 Once the VirtIO drivers are installed on the guest VM, restart the guest VM, then download the newest Intel Arc Pro B50 drivers on the guest.  In my experience, it took 2-3 times of installing the recommended version for it to finally say I was fully updated, but that seems to be a software issue on the Intel side since I experienced the same then when doing the original update on a Windows PC with the card installed.
 ## Results
-![[Pasted image 20251103133144.png]]
-![[Pasted image 20251103130440.png]]
+<img width="516" height="446" alt="Pasted image 20251103133144" src="https://github.com/user-attachments/assets/09e67563-9c64-4042-995e-c17460d63873" />
 
-![[Pasted image 20251103132835.png]]
+<img width="1216" height="720" alt="Pasted image 20251103130440" src="https://github.com/user-attachments/assets/cd3c7b18-3cdf-45cd-9500-352829a0b0e9" />
+
+<img width="2106" height="967" alt="Pasted image 20251103132835" src="https://github.com/user-attachments/assets/2594541c-2e08-4fb6-a833-3af35590ee72" />
+
 
 
 
