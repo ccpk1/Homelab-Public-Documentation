@@ -101,7 +101,7 @@ Install sysfsutils:
 sudo apt update
 sudo apt install sysfsutils
 ```
-Edit `/sys/sysfs.conf`
+Edit `/etc/sysfs.conf`
 ```shell
 #### Arc Pro B50 ####
 # Note the different format and heirarchy naming for this conf file compared to changes using echo in shell
