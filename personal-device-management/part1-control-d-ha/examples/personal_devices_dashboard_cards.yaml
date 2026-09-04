@@ -1,0 +1,771 @@
+# ============================================================
+# PERSONAL DEVICES — DASHBOARD CARDS (SINGLE USER)
+# ============================================================
+# These are the cards from the "Personal Devices" dashboard's per-user
+# view (e.g. the Kaden view), extracted and adjusted for a single user.
+#
+# They pair with the single-user YAML template
+# (personal_devices_single_user.yaml) — the entities they reference
+# are the ones that template creates.
+#
+# FIND/REPLACE: replace "kaden" with your user's name, matching the
+# same convention used in the YAML template.
+#
+# NOTE: These cards use custom cards (button-card, stack-in-card,
+# auto-entities, fold-entity-row) and card-mod. Install those via HACS
+# before using them.
+# ============================================================
+
+# ============================================================
+# CARD 1 — STATUS
+# ============================================================
+# Shows the user's current location and DNS filtering status.
+# (The original card also showed Firewalla device connectivity and
+# internet activity — those are router-level and covered in Part 2,
+# so they're removed here.)
+type: custom:button-card
+entity: person.kaden
+icon: mdi:security-network
+name: Status
+show_icon: true
+styles:
+  card:
+    - padding: 16px
+    - border-radius: 12px
+    - border: 1px solid rgba(128, 128, 128, 0.2)
+  custom_fields:
+    location:
+      - justify-self: stretch
+      - margin-top: 16px
+      - padding-bottom: 12px
+      - border-bottom: 1px solid rgba(128, 128, 128, 0.2)
+    phone_security:
+      - justify-self: stretch
+  grid:
+    - grid-template-areas: '"i n" "location location" "phone_security phone_security"'
+    - grid-template-columns: min-content 1fr
+    - grid-template-rows: min-content min-content min-content
+  icon:
+    - color: var(--paper-item-icon-color)
+    - width: 24px
+    - height: 24px
+    - transform: translateY(-1px)
+  name:
+    - justify-self: start
+    - font-weight: normal
+    - font-size: 24px
+    - margin-left: 12px
+tap_action:
+  action: none
+custom_fields:
+  location: |
+    [[[
+      let person = states[variables.person_entity];
+      let state = person ? person.state : 'Unknown';
+      let icon = 'mdi:map-marker-radius';
+      let color = 'var(--text-color)';
+      if (state === 'home') { icon = 'mdi:home'; color = '#38a169'; state = 'Home'; }
+      else if (state === 'not_home') { icon = 'mdi:home-export-outline'; color = '#e53e3e'; state = 'Away'; }
+      else if (state !== 'Unknown') { icon = 'mdi:school'; color = '#805ad5'; }
+      return `
+        <div style="display:flex; justify-content: space-between; align-items: center; font-size: 13px;">
+          <span style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; opacity: 0.6; font-weight: normal;">Current Location</span>
+          <span style="color: ${color}; font-weight: bold; display: flex; align-items: center;">
+            <ha-icon icon="${icon}" style="width: 16px; height: 16px; margin-right: 6px; transform: translateY(-3px);"></ha-icon>
+            ${state}
+          </span>
+        </div>
+      `;
+    ]]]
+  phone_security: |
+    [[[
+      let dnsBypass = states[variables.sensor_dns_bypass];
+      function buildRow(icon, label, entity) {
+        if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') return '';
+        let isBypassed = entity.state === 'on';
+        let statusIcon = isBypassed ? 'mdi:shield-alert' : 'mdi:shield-check';
+        let statusColor = isBypassed ? '#e53e3e' : '#38a169';
+        let statusText = isBypassed ? 'Bypassed' : 'Secured';
+        return `
+          <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 13px;">
+            <span style="display: flex; align-items: center;">
+              <ha-icon icon="${icon}" style="width: 16px; height: 16px; margin-right: 8px; opacity: 0.8; transform: translateY(-3px);"></ha-icon>
+              <span>${label}</span>
+            </span>
+            <span style="color: ${statusColor}; font-weight: 500; display: flex; align-items: center;">
+              <ha-icon icon="${statusIcon}" style="width: 14px; height: 14px; margin-right: 4px; transform: translateY(-3px);"></ha-icon>
+              ${statusText}
+            </span>
+          </div>
+        `;
+      }
+      let row = buildRow('mdi:dns', 'DNS Filtering Controls', dnsBypass);
+      if (!row) return '';
+      return `
+        <div style="margin-top: 12px; margin-bottom: 8px;">
+          <div style="font-size: 11px; text-align: left; text-transform: uppercase; letter-spacing: 1px; opacity: 0.6; margin-bottom: 12px;">Primary Phone Security</div>
+          ${row}
+        </div>
+      `;
+    ]]]
+variables:
+  person_entity: person.kaden
+  sensor_dns_bypass: binary_sensor.kadens_phone_dns_bypassed
+
+# ============================================================
+# CARD 2 — DEVICE RULES
+# ============================================================
+# Shows the effective access mode plus the two layers that produce it
+# (Access Profile + Access Enforcement). Fully supported by the
+# single-user YAML template.
+type: custom:button-card
+entity: sensor.kaden_access_mode
+icon: mdi:shield-account
+name: Device Rules
+show_icon: true
+styles:
+  card:
+    - padding: 16px
+    - border-radius: 16px
+  grid:
+    - grid-template-areas: '"i n" "effective effective" "layers layers"'
+    - grid-template-columns: min-content 1fr
+    - grid-template-rows: min-content min-content min-content
+  icon:
+    - color: var(--paper-item-icon-color)
+    - width: 24px
+    - height: 24px
+  name:
+    - justify-self: start
+    - font-weight: normal
+    - font-size: 24px
+    - margin-left: 12px
+tap_action:
+  action: none
+custom_fields:
+  effective: |
+    [[[
+      let state = states[variables.effective_entity]?.state || 'Unknown';
+      let colors = {
+        'Standard': '#38a169', 'Focus': '#2b6cb0', 'Downtime': '#4c51bf',
+        'Auto': '#38a169', 'Follow Profile': '#38a169', 'Pause Rules': '#319795',
+        'Chore Lock': '#dd6b20', 'Lockdown': '#e53e3e', 'Unknown': 'var(--disabled-text-color)'
+      };
+      let color = colors[state] || 'var(--primary-color)';
+      return `
+        <div style="display:flex; justify-content: space-between; align-items: center; margin-top: 14px; margin-bottom: 12px;">
+          <span style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; opacity: 0.6;">Current Mode</span>
+          <span style="background: ${color}; color: white; padding: 5px 12px; border-radius: 999px; font-size: 12px; font-weight: 700;">${state}</span>
+        </div>
+      `;
+    ]]]
+  layers: |
+    [[[
+      let baseState = states[variables.base_entity]?.state || 'Unknown';
+      let holdState = states[variables.hold_entity]?.state || 'Unknown';
+      return `
+        <div style="padding-top: 12px; border-top: 1px solid rgba(128, 128, 128, 0.2);">
+          <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 13px;">
+            <span style="display:flex; align-items:center;">
+              <ha-icon icon="mdi:tune-vertical" style="width: 16px; height: 16px; margin-right: 8px; opacity: 0.7;"></ha-icon>
+              <span>Access Profile</span>
+            </span>
+            <span style="font-weight: 600;">${baseState}</span>
+          </div>
+          <div style="display:flex; justify-content: space-between; align-items: center; font-size: 13px;">
+            <span style="display:flex; align-items:center;">
+              <ha-icon icon="mdi:shield-sync" style="width: 16px; height: 16px; margin-right: 8px; opacity: 0.7;"></ha-icon>
+              <span>Access Enforcement</span>
+            </span>
+            <span style="font-weight: 600;">${holdState}</span>
+          </div>
+        </div>
+      `;
+    ]]]
+variables:
+  base_entity: input_select.kaden_access_profile
+  effective_entity: sensor.kaden_access_mode
+  hold_entity: input_select.kaden_access_enforcement
+
+# ============================================================
+# CARD 3 — DEVICE MANAGEMENT
+# ============================================================
+# The interactive control stack: Access Profile pills, Access
+# Enforcement buttons, and a "Configure" fold for alert settings.
+# NOTE: In the original this card sits inside a grid with a
+# `visibility` condition restricting it to specific users. If you
+# want to restrict who can see/use it, add a matching `visibility`
+# block to the grid that contains it.
+type: custom:stack-in-card
+mode: vertical
+card_mod:
+  style: |
+    ha-card { padding: 16px !important; }
+cards:
+  # Header
+  - type: custom:button-card
+    entity: sensor.kaden_access_mode
+    icon: mdi:shield-edit
+    name: Device Management
+    show_icon: true
+    styles:
+      grid:
+        - grid-template-areas: '"i n"'
+        - grid-template-columns: min-content 1fr
+      icon:
+        - color: var(--paper-item-icon-color)
+        - width: 24px
+        - height: 24px
+      name:
+        - justify-self: start
+        - font-weight: normal
+        - font-size: 24px
+        - margin-left: 12px
+    tap_action:
+      action: none
+
+  # Access Profile label
+  - type: custom:button-card
+    icon: mdi:tune-vertical
+    name: Access Profile
+    styles:
+      card:
+        - padding: 12px 0px 8px 0px
+        - background: transparent
+        - border: none
+        - box-shadow: none
+      grid:
+        - grid-template-areas: '"i n"'
+        - grid-template-columns: min-content 1fr
+      icon:
+        - width: 20px
+        - color: var(--secondary-text-color)
+        - margin-right: 8px
+      name:
+        - justify-self: start
+        - font-size: 15px
+        - font-weight: 400
+        - color: var(--secondary-text-color)
+    tap_action:
+      action: none
+
+  # Access Profile pills (Standard / Focus / Downtime)
+  - type: grid
+    columns: 3
+    square: false
+    cards:
+      - type: custom:button-card
+        entity: input_select.kaden_access_profile
+        icon: mdi:shield-check-outline
+        name: Standard
+        show_icon: true
+        show_label: true
+        show_name: true
+        show_state: false
+        state:
+          - value: Standard
+            styles:
+              icon:
+                - color: "#38a169"
+              name:
+                - color: "#38a169"
+        styles:
+          icon:
+            - width: 20px
+            - color: var(--paper-item-icon-color)
+          label:
+            - font-size: 10px
+            - text-transform: uppercase
+            - letter-spacing: 0.6px
+            - opacity: 0.6
+          name:
+            - font-size: 12px
+            - font-weight: 700
+        tap_action:
+          action: call-service
+          service: input_select.select_option
+          data:
+            entity_id: input_select.kaden_access_profile
+            option: Standard
+        card_mod:
+          style: |
+            ha-card {
+              border-radius: 999px !important; box-shadow: none !important; padding: 8px !important;
+              {% if is_state('input_select.kaden_access_profile', 'Standard') %}
+                background: rgba(56, 161, 105, 0.16) !important;
+                border: 1px solid rgba(56, 161, 105, 0.45) !important;
+              {% else %}
+                background: rgba(128, 128, 128, 0.05) !important;
+                border: 1px solid rgba(128, 128, 128, 0.15) !important;
+              {% endif %}
+            }
+      - type: custom:button-card
+        entity: input_select.kaden_access_profile
+        icon: mdi:target
+        name: Focus
+        show_icon: true
+        show_label: true
+        show_name: true
+        show_state: false
+        state:
+          - value: Focus
+            styles:
+              icon:
+                - color: "#2b6cb0"
+              name:
+                - color: "#2b6cb0"
+        styles:
+          icon:
+            - width: 20px
+            - color: var(--paper-item-icon-color)
+          label:
+            - font-size: 10px
+            - text-transform: uppercase
+            - letter-spacing: 0.6px
+            - opacity: 0.6
+          name:
+            - font-size: 12px
+            - font-weight: 700
+        tap_action:
+          action: call-service
+          service: input_select.select_option
+          data:
+            entity_id: input_select.kaden_access_profile
+            option: Focus
+        card_mod:
+          style: |
+            ha-card {
+              border-radius: 999px !important; box-shadow: none !important; padding: 8px !important;
+              {% if is_state('input_select.kaden_access_profile', 'Focus') %}
+                background: rgba(43, 108, 176, 0.16) !important;
+                border: 1px solid rgba(43, 108, 176, 0.45) !important;
+              {% else %}
+                background: rgba(128, 128, 128, 0.05) !important;
+                border: 1px solid rgba(128, 128, 128, 0.15) !important;
+              {% endif %}
+            }
+      - type: custom:button-card
+        entity: input_select.kaden_access_profile
+        icon: mdi:sleep
+        name: Downtime
+        show_icon: true
+        show_label: true
+        show_name: true
+        show_state: false
+        state:
+          - value: Downtime
+            styles:
+              icon:
+                - color: "#4c51bf"
+              name:
+                - color: "#4c51bf"
+        styles:
+          icon:
+            - width: 20px
+            - color: var(--paper-item-icon-color)
+          label:
+            - font-size: 10px
+            - text-transform: uppercase
+            - letter-spacing: 0.6px
+            - opacity: 0.6
+          name:
+            - font-size: 12px
+            - font-weight: 700
+        tap_action:
+          action: call-service
+          service: input_select.select_option
+          data:
+            entity_id: input_select.kaden_access_profile
+            option: Downtime
+        card_mod:
+          style: |
+            ha-card {
+              border-radius: 999px !important; box-shadow: none !important; padding: 8px !important;
+              {% if is_state('input_select.kaden_access_profile', 'Downtime') %}
+                background: rgba(76, 81, 191, 0.16) !important;
+                border: 1px solid rgba(76, 81, 191, 0.45) !important;
+              {% else %}
+                background: rgba(128, 128, 128, 0.05) !important;
+                border: 1px solid rgba(128, 128, 128, 0.15) !important;
+              {% endif %}
+            }
+
+  # Access Enforcement label
+  - type: custom:button-card
+    icon: mdi:shield-sync
+    name: Access Enforcement
+    styles:
+      card:
+        - padding: 16px 0px 8px 0px
+        - background: transparent
+        - border: none
+        - box-shadow: none
+      grid:
+        - grid-template-areas: '"i n"'
+        - grid-template-columns: min-content 1fr
+      icon:
+        - width: 20px
+        - color: var(--secondary-text-color)
+        - margin-right: 8px
+      name:
+        - justify-self: start
+        - font-size: 15px
+        - font-weight: 400
+        - color: var(--secondary-text-color)
+    tap_action:
+      action: none
+
+  # Access Enforcement buttons (Follow Profile / Pause Rules / Chore Lock / Lockdown)
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: custom:button-card
+        entity: input_select.kaden_access_enforcement
+        icon: mdi:sync
+        label: AUTO
+        name: Follow Profile
+        show_icon: true
+        show_label: true
+        show_name: true
+        show_state: false
+        state:
+          - value: Auto
+            styles:
+              icon:
+                - color: "#38a169"
+              name:
+                - color: "#38a169"
+          - value: Follow Profile
+            styles:
+              icon:
+                - color: "#38a169"
+              name:
+                - color: "#38a169"
+        styles:
+          icon:
+            - width: 22px
+            - color: var(--paper-item-icon-color)
+          label:
+            - font-size: 10px
+            - text-transform: uppercase
+            - letter-spacing: 0.6px
+            - opacity: 0.6
+          name:
+            - font-size: 11px
+            - font-weight: 700
+        tap_action:
+          action: call-service
+          service: input_select.select_option
+          data:
+            entity_id: input_select.kaden_access_enforcement
+            option: Auto
+        card_mod:
+          style: |
+            ha-card {
+              border-radius: 12px !important; box-shadow: none !important; padding: 8px !important;
+              {% if is_state('input_select.kaden_access_enforcement', 'Auto') or is_state('input_select.kaden_access_enforcement', 'Automatic') or is_state('input_select.kaden_access_enforcement', 'Follow Profile') %}
+                background: rgba(56, 161, 105, 0.14) !important;
+                border: 1px solid rgba(56, 161, 105, 0.4) !important;
+              {% else %}
+                background: rgba(128, 128, 128, 0.05) !important;
+                border: 1px solid rgba(128, 128, 128, 0.15) !important;
+              {% endif %}
+            }
+      - type: custom:button-card
+        entity: input_select.kaden_access_enforcement
+        icon: mdi:lock-open-variant-outline
+        label: OVERRIDE
+        name: Pause Rules
+        show_icon: true
+        show_label: true
+        show_name: true
+        show_state: false
+        state:
+          - value: Pause Rules
+            styles:
+              icon:
+                - color: "#319795"
+              name:
+                - color: "#319795"
+        styles:
+          icon:
+            - width: 22px
+            - color: var(--paper-item-icon-color)
+          label:
+            - font-size: 10px
+            - text-transform: uppercase
+            - letter-spacing: 0.6px
+            - opacity: 0.6
+          name:
+            - font-size: 12px
+            - font-weight: 700
+        tap_action:
+          action: call-service
+          service: input_select.select_option
+          data:
+            entity_id: input_select.kaden_access_enforcement
+            option: Pause Rules
+        card_mod:
+          style: |
+            ha-card {
+              border-radius: 12px !important; box-shadow: none !important; padding: 8px !important;
+              {% if is_state('input_select.kaden_access_enforcement', 'Pause Rules') %}
+                background: rgba(49, 151, 149, 0.16) !important;
+                border: 1px solid rgba(49, 151, 149, 0.45) !important;
+              {% else %}
+                background: rgba(128, 128, 128, 0.05) !important;
+                border: 1px solid rgba(128, 128, 128, 0.15) !important;
+              {% endif %}
+            }
+      - type: custom:button-card
+        entity: input_select.kaden_access_enforcement
+        icon: mdi:broom
+        label: OVERRIDE
+        name: Chore Lock
+        show_icon: true
+        show_label: true
+        show_name: true
+        show_state: false
+        state:
+          - value: Chore Lock
+            styles:
+              icon:
+                - color: "#dd6b20"
+              name:
+                - color: "#dd6b20"
+        styles:
+          icon:
+            - width: 22px
+            - color: var(--paper-item-icon-color)
+          label:
+            - font-size: 10px
+            - text-transform: uppercase
+            - letter-spacing: 0.6px
+            - opacity: 0.6
+          name:
+            - font-size: 12px
+            - font-weight: 700
+        tap_action:
+          action: call-service
+          service: input_select.select_option
+          data:
+            entity_id: input_select.kaden_access_enforcement
+            option: Chore Lock
+        card_mod:
+          style: |
+            ha-card {
+              border-radius: 12px !important; box-shadow: none !important; padding: 8px !important;
+              {% if is_state('input_select.kaden_access_enforcement', 'Chore Lock') %}
+                background: rgba(221, 107, 32, 0.16) !important;
+                border: 1px solid rgba(221, 107, 32, 0.45) !important;
+              {% else %}
+                background: rgba(128, 128, 128, 0.05) !important;
+                border: 1px solid rgba(128, 128, 128, 0.15) !important;
+              {% endif %}
+            }
+      - type: custom:button-card
+        entity: input_select.kaden_access_enforcement
+        icon: mdi:alert-octagon
+        label: OVERRIDE
+        name: Lockdown
+        show_icon: true
+        show_label: true
+        show_name: true
+        show_state: false
+        state:
+          - value: Lockdown
+            styles:
+              icon:
+                - color: "#e53e3e"
+              name:
+                - color: "#e53e3e"
+        styles:
+          icon:
+            - width: 22px
+            - color: var(--paper-item-icon-color)
+          label:
+            - font-size: 10px
+            - text-transform: uppercase
+            - letter-spacing: 0.6px
+            - opacity: 0.6
+          name:
+            - font-size: 12px
+            - font-weight: 700
+        tap_action:
+          action: call-service
+          service: input_select.select_option
+          data:
+            entity_id: input_select.kaden_access_enforcement
+            option: Lockdown
+        card_mod:
+          style: |
+            ha-card {
+              border-radius: 12px !important; box-shadow: none !important; padding: 8px !important;
+              {% if is_state('input_select.kaden_access_enforcement', 'Lockdown') %}
+                background: rgba(229, 62, 62, 0.16) !important;
+                border: 1px solid rgba(229, 62, 62, 0.45) !important;
+              {% else %}
+                background: rgba(128, 128, 128, 0.05) !important;
+                border: 1px solid rgba(128, 128, 128, 0.15) !important;
+              {% endif %}
+            }
+
+  # Configure fold (alert toggles)
+  - type: entities
+    show_header_toggle: false
+    state_color: true
+    entities:
+      - type: custom:fold-entity-row
+        head:
+          type: section
+          label: Configure
+        open: false
+        padding: 0
+        entities:
+          - type: section
+            label: Alerts
+          - entity: input_boolean.personal_devices_kaden_bypass_alert_notify
+          - entity: input_number.personal_devices_bypass_alert_delay_minutes
+            name: Shared Bypass Delay (min)
+
+# ============================================================
+# CARD 4 — INTERNET CONTROLS (CONTROL D)
+# ============================================================
+# Auto-discovers the Control D access rules for the user's phone
+# profile and renders them as a list of on/off toggles.
+#
+# NOTE ON "DEVICES": The original card supports two profiles — a
+# phone profile AND a second "devices" profile (other devices in the
+# same Control D profile, e.g. those coupled via Firewalla). For the
+# single-user template we set g2 to none so it renders the phone
+# profile only. If you have a second profile, set g2 to its name and
+# label and both columns will render.
+#
+# This card relies on the Control D Manager integration exposing a
+# `profile_name`, `item_type`, and `item_name` attribute on each
+# entity. It uses the custom cards `auto-entities` and
+# `multiple-entity-row`, and the `simple-icons` icon pack.
+type: custom:auto-entities
+card:
+  type: entities
+  title: Internet Controls (Control D)
+  show_header_toggle: false
+  state_color: true
+filter:
+  template: |
+    {# --- 1. CONFIGURATION --- #} 
+    {% set target_integration = "controld_manager" %}
+    {% set target_fold_threshold = 9 %}
+    {# Define Profiles. For a single-profile card, set g2 to none or use the same name as g1. #}
+    {% set g1 = {'name': 'Kadens Phone', 'label': 'Phone 📱'} %} 
+    {% set g2 = none %} 
+    {# Smart detection for single vs dual profile rendering #}
+    {% set is_single = true if g2 is none else (g1.name == g2.name) %}
+    {# Global Filters to Opt-In #}
+    {% set filter_whitelist = ['games', 'social'] %}
+    {% set mapping = {
+      'internet': {'name': 'Internet', 'icon': 'fa7-solid:earth', 'order': 1},
+      'games': {'name': 'Gaming', 'icon': 'fa7-solid:gamepad', 'order': 2},
+      'social': {'name': 'Social Media', 'icon': 'fa7-solid:users-rays', 'order': 3},
+      'av': {'name': 'Video', 'icon': 'fa7-solid:clapperboard', 'order': 4},
+      'youtube': {'name': 'YouTube', 'icon': 'simple-icons:youtube', 'order': 5},
+      'tiktok': {'name': 'TikTok', 'icon': 'simple-icons:tiktok', 'order': 10},
+      'discord': {'name': 'Discord', 'icon': 'simple-icons:discord', 'order': 10},
+      'instagram': {'name': 'Instagram', 'icon': 'simple-icons:instagram', 'order': 6},
+      'facebook': {'name': 'Facebook', 'icon': 'simple-icons:facebook', 'order': 10},
+      'snapchat': {'name': 'Snapchat', 'icon': 'simple-icons:snapchat', 'order': 10},
+      'twitter': {'name': 'X / Twitter', 'icon': 'simple-icons:x', 'order': 10},
+      'reddit': {'name': 'Reddit', 'icon': 'simple-icons:reddit', 'order': 10},
+      'telegram': {'name': 'Telegram', 'icon': 'simple-icons:telegram', 'order': 10},
+      'twitch': {'name': 'Twitch', 'icon': 'simple-icons:twitch', 'order': 10}
+    } %}
+    {# --- 2. DISCOVERY & PRE-FILTERING --- #}  {% set ns = namespace(main_rows=[], fold_rows=[], g1_list=[], g2_list=[]) %}  {% set all_cd = integration_entities(target_integration) %}
+    {# PASS 1: Split entities purely by the new 'profile_name' attribute #} {% for e in all_cd %}
+      {% set p_name = state_attr(e, 'profile_name') | default('') %}
+      {% if p_name == g1.name %}
+        {% set ns.g1_list = ns.g1_list + [e] %}
+      {% elif not is_single and p_name == g2.name %}
+        {% set ns.g2_list = ns.g2_list + [e] %}
+      {% endif %}
+    {% endfor %}
+    {# PASS 2: Match and Build Rows using item attributes #} {% for e1 in ns.g1_list %}
+      {% set item_type = state_attr(e1, 'item_type') | default('') %}
+      {% set item_name = state_attr(e1, 'item_name') | default('') %}
+      
+      {# Only process known Control D access rules #}
+      {% if item_type in ['default_rule', 'service', 'filter'] %}
+        
+        {# Normalize item_name to cleanly map against the dictionary #}
+        {% set clean = item_name | lower 
+           | replace('default rule', 'internet') 
+           | replace('x / twitter', 'twitter') 
+           | replace(' ', '_') %}
+        
+        {# Filter: Internet, Services, or Whitelisted global filters #}
+        {% if item_type != 'filter' or clean in filter_whitelist %}
+          
+          {# Find matching entity in g2 using identical type and name #}
+          {% set e2_match = namespace(ent=none) %}
+          {% if not is_single %}
+            {% for e2 in ns.g2_list if e2_match.ent is none %}
+              {% if state_attr(e2, 'item_type') == item_type and state_attr(e2, 'item_name') == item_name %}
+                {% set e2_match.ent = e2 %}
+              {% endif %}
+            {% endfor %}
+          {% endif %}
+
+          {# Lookup mapping, falling back to the raw attribute name if not found #}
+          {% set info = mapping.get(clean, {'name': item_name, 'icon': 'fa7-solid:layer-group', 'order': 100}) %}
+          
+          {# UI Logic: Determine if entity is a filter to append label #}
+          {% set is_filter = (item_type == 'filter') %}
+          {% set row_title = info.name ~ ' (Filter)' if is_filter else info.name %}
+          {% set sort_key = (info.order + 100) | string + info.name %}
+
+          {# Dynamic Entity Construction (The Fix) #}
+          {% if is_single %}
+            {# Keep the compact custom row, but suppress the inner label with 'name: false' #}
+            {% set row_ents = [{"entity": e1, "name": false, "toggle": is_filter}] %}
+          {% else %}
+            {% set row_ents = [{"entity": e1, "name": g1.label, "toggle": is_filter}] %}
+            {% if e2_match.ent %}
+              {% set row_ents = row_ents + [{"entity": e2_match.ent, "name": g2.label, "toggle": is_filter}] %}
+            {% endif %}
+          {% endif %}
+
+          {% set row_config = {
+            "type": "custom:multiple-entity-row",
+            "entity": e1,
+            "name": row_title,
+            "icon": info.icon,
+            "sort_key": sort_key,
+            "show_state": false,
+            "entities": row_ents
+          } %}
+
+          {# Partition #}
+          {% if info.order <= target_fold_threshold %}
+            {% set ns.main_rows = ns.main_rows + [row_config] %}
+          {% else %}
+            {% set ns.fold_rows = ns.fold_rows + [row_config] %}
+          {% endif %}
+
+        {% endif %}
+      {% endif %}
+    {% endfor %}
+    {# Assemble the final output #} {% set output = ns.main_rows | sort(attribute='sort_key') %}
+    {% if ns.fold_rows | length > 0 %}
+      {% set fold_row = {
+        "type": "custom:fold-entity-row",
+        "head": {
+          "type": "section",
+          "label": "Additional Controls"
+        },
+        "padding": 0,
+        "open": false,
+        "entities": ns.fold_rows | sort(attribute='sort_key')
+      } %}
+      {% set output = output + [fold_row] %}
+    {% endif %}
+    {{ output }}

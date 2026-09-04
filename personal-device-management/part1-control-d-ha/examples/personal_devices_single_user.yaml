@@ -1,0 +1,338 @@
+# ============================================================
+# SINGLE-USER CONTROL DEVICE — CONTROL D + DNS BYPASS DETECTION
+# ============================================================
+# This is a trimmed, single-user version of the full system. It covers ONLY:
+#   1. The access mode model (profile + enforcement -> effective mode)
+#   2. DNS bypass detection
+#   3. The Control D driver that applies the mode
+#
+# Router-level (Firewalla) blocking and chore-lock are covered in later parts.
+#
+# FIND/REPLACE: replace "kaden" with your user's name. See the
+# checkpoint at the bottom of this file.
+# ============================================================
+
+input_select:
+  # Access profile: the normal scheduled posture (changes freely through the day).
+  kaden_access_profile:
+    name: Kaden Access Profile
+    options:
+      - Standard
+      - Focus
+      - Downtime
+    initial: Standard
+    icon: mdi:calendar-sync
+
+  # Access enforcement: a temporary override or consequence that takes precedence
+  # over the access profile. Auto = no override active.
+  kaden_access_enforcement:
+    name: Kaden Access Enforcement
+    options:
+      - Auto
+      - Pause Rules
+      - Chore Lock
+      - Lockdown
+    initial: Auto
+    icon: mdi:lock-alert
+
+input_boolean:
+  # Master switch: enable/disable bypass alerts for the user.
+  personal_devices_kaden_bypass_alert_notify:
+    name: Kaden Bypass Alert Notify
+    icon: mdi:wifi-strength-off-outline
+
+input_number:
+  # Confirmation window: how long a bypass must persist before the alert fires.
+  personal_devices_bypass_alert_delay_minutes:
+    name: Personal Devices Bypass Alert Delay Minutes
+    icon: mdi:timer-alert-outline
+    min: 1
+    max: 60
+    step: 1
+    initial: 5
+    mode: box
+
+template:
+  - sensor:
+      # Effective access mode: the access profile unless an access enforcement
+      # is active, in which case the enforcement wins.
+      - name: "Kaden Access Mode"
+        unique_id: kaden_access_mode
+        icon: mdi:shield-account
+        state: >
+          {% set enforcement = states('input_select.kaden_access_enforcement') %}
+          {% set access_profile = states('input_select.kaden_access_profile') %}
+          {{ access_profile if enforcement == 'Auto' else enforcement }}
+
+  - binary_sensor:
+      # True when DNS protection is expected but not active, indicating a DNS-level bypass.
+      - name: "Kadens Phone DNS Bypassed"
+        unique_id: kadens_phone_dns_bypassed
+        device_class: problem
+        delay_on:
+          minutes: 2 # Debounce window
+        state: >
+          {# --- 1. CONFIGURATION --- #}
+          {% set bool_dns_data_connection_healthy = is_state('sensor.kadens_phone_status', 'healthy') %}
+          {% set bool_dns_active = is_state('binary_sensor.kadens_phone_kadens_phone_status', 'on') %}
+          {% set bool_dns_active_via_vpn = is_state('binary_sensor.kadens_phone_kadens_phone_wgvpn_status', 'on') %}
+
+          {% set ts_dns_data_last_sync = as_timestamp(state_attr('sensor.kadens_phone_status', 'last_successful_refresh'), 0) %}
+          {% set ts_gps_last_located = as_timestamp(state_attr('sensor.kadens_phone_ic3_last_update', 'last_located'), 0) %}
+          {# Proof of internet: a local router-based device tracker (e.g. Firewalla)
+             is the ideal on-network signal. If you have one, uncomment the line
+             below and it will be combined with the GPS timestamp in the check.
+             If you don't, the GPS timestamp alone still proves the phone is
+             online, so the line below is left commented out and non-impactful. #}
+          {# {% set ts_net_last_active = as_timestamp(state_attr('device_tracker.kadens_phone_presence', 'last_active'), 0) %} #}
+          {% set ts_net_last_active = 0 %}
+
+          {# TUNED: 12m stale check (5m sync cycle) and 21m proof of internet (ic3 20m Offline window) #}
+          {% set int_max_seconds_before_dns_data_stale = 720 %}
+          {% set int_max_seconds_for_recent_internet = 1260 %}
+
+          {# --- 2. LOGIC --- #}
+          {% set bool_dns_data_is_recent = (as_timestamp(now()) - ts_dns_data_last_sync) < int_max_seconds_before_dns_data_stale %}
+
+          {# Proof of Internet: did GPS or the network see the phone within the last 21 mins? #}
+          {% set bool_internet_is_active = (as_timestamp(now()) - [ts_net_last_active, ts_gps_last_located] | max) < int_max_seconds_for_recent_internet %}
+
+          {{ bool_dns_data_connection_healthy and bool_dns_data_is_recent and bool_internet_is_active and not bool_dns_active and not bool_dns_active_via_vpn }}
+
+      # Gate for the bypass alert: true once a bypass has persisted past the confirmation window.
+      - name: "Kaden Network Bypass Alert Active"
+        unique_id: kaden_network_bypass_alert_active
+        icon: mdi:network-alert
+        device_class: problem
+        state: >
+          {% set enabled = is_state('input_boolean.personal_devices_kaden_bypass_alert_notify', 'on') %}
+          {% set threshold_seconds = states('input_number.personal_devices_bypass_alert_delay_minutes') | int(5) * 60 %}
+          {% set ns = namespace(active_times=[]) %}
+          {% if is_state('binary_sensor.kadens_phone_dns_bypassed', 'on') %}
+            {% set ns.active_times = ns.active_times + [as_timestamp(states.binary_sensor.kadens_phone_dns_bypassed.last_changed, 0)] %}
+          {% endif %}
+          {% set is_active = ns.active_times | count > 0 %}
+          {% set active_since = ns.active_times | min if is_active else 0 %}
+          {{ enabled and is_active and (as_timestamp(now()) - active_since) >= threshold_seconds }}
+
+script:
+  personal_devices_apply_access:
+    alias: Personal Devices Apply Access
+    description: >
+      Maps an effective access mode to categories and applies the full desired
+      end state to every Control D inventory item provided.
+    mode: queued
+    fields:
+      effective_mode:
+        required: true
+        selector:
+          text:
+      mode_category_map:
+        required: false
+      controld_inventory:
+        required: false
+    sequence:
+      - variables:
+          active_categories_csv: >
+            {% set default_mode_category_map = {
+              'Standard': [],
+              'Pause Rules': [],
+              'Focus': ['entertainment'],
+              'Downtime': ['internet', 'entertainment'],
+              'Chore Lock': ['internet', 'entertainment'],
+              'Lockdown': ['internet', 'entertainment']
+            } %}
+            {% set category_map = mode_category_map if mode_category_map is mapping else default_mode_category_map %}
+            {{ category_map.get(effective_mode, []) | join('|') }}
+
+          controld_inventory_items: "{{ controld_inventory | default([], true) }}"
+
+      - repeat:
+          for_each: "{{ controld_inventory_items }}"
+          sequence:
+            - variables:
+                item_active: >
+                  {% set active_categories = active_categories_csv.split('|') if active_categories_csv else [] %}
+                  {% set ns = namespace(active=false) %}
+                  {% for category in repeat.item.categories | default([], true) %}
+                    {% if category in active_categories %}
+                      {% set ns.active = true %}
+                    {% endif %}
+                  {% endfor %}
+                  {{ 'on' if ns.active else 'off' }}
+
+            - if:
+                - condition: template
+                  value_template: "{{ repeat.item.phone is defined and repeat.item.phone.entity is defined and repeat.item.phone.entity | string | length > 0 }}"
+              then:
+                - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: "{{ repeat.item.phone.active is defined and repeat.item.phone.inactive is defined }}"
+                      sequence:
+                        - action: select.select_option
+                          target:
+                            entity_id: "{{ repeat.item.phone.entity }}"
+                          data:
+                            option: "{{ repeat.item.phone.active if item_active == 'on' else repeat.item.phone.inactive }}"
+                  default:
+                    - action: "{{ 'homeassistant.turn_on' if item_active == 'on' else 'homeassistant.turn_off' }}"
+                      target:
+                        entity_id: "{{ repeat.item.phone.entity }}"
+
+            - if:
+                - condition: template
+                  value_template: "{{ repeat.item.devices is defined and repeat.item.devices.entity is defined and repeat.item.devices.entity | string | length > 0 }}"
+              then:
+                - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: "{{ repeat.item.devices.active is defined and repeat.item.devices.inactive is defined }}"
+                      sequence:
+                        - action: select.select_option
+                          target:
+                            entity_id: "{{ repeat.item.devices.entity }}"
+                          data:
+                            option: "{{ repeat.item.devices.active if item_active == 'on' else repeat.item.devices.inactive }}"
+                  default:
+                    - action: "{{ 'homeassistant.turn_on' if item_active == 'on' else 'homeassistant.turn_off' }}"
+                      target:
+                        entity_id: "{{ repeat.item.devices.entity }}"
+
+automation:
+  # When a bypass indicator turns on, actively re-sync the Control D and
+  # location data sources so the confirmation window below makes its decision
+  # on the most current snapshot, not a possibly-stale one.
+  # (The full system also syncs the Firewalla runtime here; that's router-level
+  # and covered in a later part, so it's omitted here.)
+  - alias: Personal Devices Refresh Trackers On Bypass
+    id: people_refresh_trackers_on_network_bypass_alerts
+    description: Refresh the Control D and location trackers when the phone appears
+      to bypass DNS checks.
+    mode: single
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.kadens_phone_dns_bypassed
+        to: "on"
+    conditions:
+      - condition: template
+        value_template: "{{ this.attributes.last_triggered is none or (now() - this.attributes.last_triggered).total_seconds() > 180 }}"
+        alias: "Rate Limit: 3 Minute Cooldown"
+    actions:
+      - parallel:
+          - action: button.press
+            target:
+              entity_id:
+                - button.account_sync_now
+            continue_on_error: true
+            data: {}
+          - action: icloud3.action
+            data:
+              command: locate
+              device_name: kadens_phone_ic3
+            continue_on_error: true
+
+  - alias: Personal Devices Kaden Access Enforcer
+    id: personal_devices_kaden_access_enforcer
+    description: Applies the user's Control D controls whenever their effective access mode changes.
+    mode: restart
+    triggers:
+      - trigger: homeassistant
+        event: start
+      - trigger: state
+        entity_id: sensor.kaden_access_mode
+    actions:
+      - action: script.personal_devices_apply_access
+        data:
+          effective_mode: "{{ states('sensor.kaden_access_mode') }}"
+          mode_category_map:
+            Standard: []
+            "Pause Rules": []
+            Focus:
+              - entertainment
+            Downtime:
+              - internet
+              - entertainment
+            "Chore Lock":
+              - internet
+              - entertainment
+            Lockdown:
+              - internet
+              - entertainment
+          controld_inventory:
+            # Only include services you've activated in Control D. If you haven't
+            # enabled a service (e.g. social), delete its inventory entry — otherwise
+            # the script will log errors trying to control an entity that doesn't exist.
+            - id: controld_internet
+              categories:
+                - internet
+              phone:
+                entity: select.kadens_phone_options_default_rule
+                active: "blocking"
+                inactive: "bypassing"
+            - id: controld_gaming
+              categories:
+                - gaming
+                - entertainment
+              phone:
+                entity: switch.kadens_phone_filters_games
+            - id: controld_social
+              categories:
+                - social
+                - entertainment
+              phone:
+                entity: switch.kadens_phone_filters_social
+            - id: controld_youtube
+              categories:
+                - youtube
+                - video
+                - entertainment
+              phone:
+                entity: select.kadens_phone_services_video_youtube
+                active: "blocked"
+                inactive: "off"
+            - id: controld_instagram
+              categories:
+                - instagram
+                - social
+                - entertainment
+              phone:
+                entity: select.kadens_phone_services_social_instagram
+                active: "blocked"
+                inactive: "off"
+
+alert:
+  personal_devices_kaden_bypass_warn_alert_active:
+    name: Kaden Network Bypass Alert Active
+    entity_id: binary_sensor.kaden_network_bypass_alert_active
+    state: "on"
+    repeat:
+      - 30
+      - 60
+      - 180
+    can_acknowledge: true
+    skip_first: false
+    title: "Kaden Network Bypass"
+    message: >
+      Kaden's phone is bypassing DNS controls /
+      Active for {{ relative_time(states.binary_sensor.kaden_network_bypass_alert_active.last_changed) }} /
+      Triggered: {{ as_timestamp(states.binary_sensor.kaden_network_bypass_alert_active.last_changed) | timestamp_custom('%A %I:%M%p (%d-%b-%Y)') }}
+    done_message: "Kaden's network bypass resolved at {{ as_timestamp(states.binary_sensor.kaden_network_bypass_alert_active.last_changed) | timestamp_custom('%A %I:%M%p (%d-%b-%Y)') }}"
+    notifiers:
+      - mobile_app_kadens_phone
+
+# ============================================================
+# FIND/REPLACE CHECKPOINT
+# ============================================================
+# After you finish the replacements, every line below should contain your
+# user's name — NOT "kaden". If any still say "kaden", you missed that form.
+#
+#   kaden   (lowercase)        -> kaden_access_profile, person.kaden
+#   kadens  (lowercase poss.)  -> kadens_phone_status, mobile_app_kadens_phone
+#   Kaden   (proper)           -> "Kaden Access Profile" (display name)
+#   Kadens  (proper poss.)     -> "Kadens Phone DNS Bypassed" (display name)
+#
+# Gotchas:
+#   • kadens_phone_kadens_phone_status / _wgvpn_status — doubled, intentional
+#   • personal_devices_* — shared helpers, do NOT rename
+# ============================================================
