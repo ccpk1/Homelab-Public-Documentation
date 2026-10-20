@@ -1,0 +1,10 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  // Everything in this repo is publishable by definition, and a wrong edit
+  // cannot be taken back once it is public. AGENTS.md makes privacy the
+  // default, so every file change is confirmed first. This overrides the
+  // parent `edit: allow` because the last matching rule wins.
+  "permissions": [
+    { "action": "edit", "resource": "*", "effect": "ask" },
+  ],
+}
